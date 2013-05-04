@@ -1,5 +1,7 @@
 # Mysql2 - A modern, simple and very fast Mysql library for Ruby - binding to libmysql
 
+[![Build Status](https://travis-ci.org/brianmario/mysql2.png)](https://travis-ci.org/brianmario/mysql2)
+
 The Mysql2 gem is meant to serve the extremely common use-case of connecting, querying and iterating on results.
 Some database libraries out there serve as direct 1:1 mappings of the already complex C API's available.
 This one is not.
@@ -18,7 +20,9 @@ Mysql2::Result - returned from issuing a #query on the connection. It includes E
 gem install mysql2
 ```
 
-You may have to specify --with-mysql-config=/some/random/path/bin/mysql_config
+This gem links against MySQL's `libmysqlclient` C shared library. You may need to install a package such as `libmysqlclient-dev`, `mysql-devel`, or other appropriate package for your system.
+
+If you have installed MySQL to a non-standard location, add `gem install mysql2 --with-mysql-config=/some/random/path/bin/mysql_config`
 
 ## Usage
 
@@ -84,6 +88,44 @@ results.each(:as => :array) do |row|
 # An otter's den is called a "holt" or "couch"
 end
 ```
+
+## Connection options
+
+You may set the following connection options in Mysql2::Client.new(...):
+
+``` ruby
+Mysql2::Client.new(
+  :host,
+  :username,
+  :password,
+  :port,
+  :database,
+  :socket = '/path/to/mysql.sock',
+  :flags = REMEMBER_OPTIONS | LONG_PASSWORD | LONG_FLAG | TRANSACTIONS | PROTOCOL_41 | SECURE_CONNECTION | MULTI_STATEMENTS,
+  :encoding = 'utf8',
+  :read_timeout = seconds,
+  :write_timeout = seconds,
+  :connect_timeout = seconds,
+  :reconnect = true/false,
+  :local_infile = true/false,
+  )
+```
+
+You can also retrieve multiple result sets. For this to work you need to connect with
+flags `Mysql2::Client::MULTI_STATEMENTS`. Using multiple result sets is normally used
+when calling stored procedures that return more than one result set
+
+``` ruby
+client = Mysql2::Client.new(:host => "localhost", :username => "root", :flags => Mysql2::Client::MULTI_STATEMENTS )
+result = client.query( 'CALL sp_customer_list( 25, 10 )')
+# result now contains the first result set
+while ( client.next_result)
+    result = client.store_result
+    # result now contains the next result set
+end
+```
+
+See https://gist.github.com/1367987 for using MULTI_STATEMENTS with Active Record.
 
 ## Cascading config
 
@@ -212,15 +254,30 @@ This is especially helpful since it saves the cost of creating the row in Ruby i
 If you only plan on using each row once, then it's much more efficient to disable this behavior by setting the `:cache_rows` option to false.
 This would be helpful if you wanted to iterate over the results in a streaming manner. Meaning the GC would cleanup rows you don't need anymore as you're iterating over the result set.
 
-## ActiveRecord
+### Streaming
 
-To use the ActiveRecord driver (with or without rails), all you should need to do is have this gem installed and set the adapter in your database.yml to "mysql2".
+`Mysql2::Client` can optionally only fetch rows from the server on demand by setting `:stream => true`. This is handy when handling very large result sets which might not fit in memory on the client.
+
+``` ruby
+result = client.query("SELECT * FROM really_big_Table", :stream => true)
+```
+
+There are a few things that need to be kept in mind while using streaming:
+
+* `:cache_rows` is ignored currently. (if you want to use `:cache_rows` you probably don't want to be using `:stream`)
+* You must fetch all rows in the result set of your query before you can make new queries. (i.e. with `Mysql2::Result#each`)
+
+Read more about the consequences of using `mysql_use_result` (what streaming is implemented with) here: http://dev.mysql.com/doc/refman/5.0/en/mysql-use-result.html.
+
+## Active Record
+
+To use the Active Record driver (with or without rails), all you should need to do is have this gem installed and set the adapter in your database.yml to "mysql2".
 That was easy right? :)
 
-NOTE: as of 0.3.0, and ActiveRecord 3.1 - the ActiveRecord adapter has been pulled out of this gem and into ActiveRecord itself. If you need to use mysql2 with
+NOTE: as of 0.3.0, and Active Record 3.1 - the Active Record adapter has been pulled out of this gem and into Active Record itself. If you need to use mysql2 with
 Rails versions < 3.1 make sure and specify `gem "mysql2", "~> 0.2.7"` in your Gemfile
 
-## Asynchronous ActiveRecord
+## Asynchronous Active Record
 
 Please see the [em-synchrony](https://github.com/igrigorik/em-synchrony) project for details about using EventMachine with mysql2 and Rails.
 
@@ -276,7 +333,7 @@ The specs pass on my system (SL 10.6.3, x86_64) in these rubies:
 * ruby-trunk
 * rbx-head - broken at the moment, working with the rbx team for a solution
 
-The ActiveRecord driver should work on 2.3.5 and 3.0
+The Active Record driver should work on 2.3.5 and 3.0
 
 ## Yeah... but why?
 
@@ -326,9 +383,16 @@ CREATE USER '<user>'@'localhost' IDENTIFIED BY '';
 GRANT ALL PRIVILEGES ON test.* TO '<user>'@'localhost';
 ```
 
+You can change these defaults in the spec/configuration.yml which is generated
+automatically when you run rake (or explicitly `rake spec/configuration.yml`).
+
+For a normal installation on a Mac, you most likely do not need to do anything,
+though.
+
 ## Special Thanks
 
 * Eric Wong - for the contribution (and the informative explanations) of some thread-safety, non-blocking I/O and cleanup patches. You rock dude
-* Yury Korolev (http://github.com/yury) - for TONS of help testing the ActiveRecord adapter
+* Yury Korolev (http://github.com/yury) - for TONS of help testing the Active Record adapter
 * Aaron Patterson (http://github.com/tenderlove) - tons of contributions, suggestions and general badassness
-* Mike Perham (http://github.com/mperham) - Async ActiveRecord adapter (uses Fibers and EventMachine)
+* Mike Perham (http://github.com/mperham) - Async Active Record adapter (uses Fibers and EventMachine)
+* Aaron Stone (http://github.com/sodabrew) - additional client settings, local files, microsecond time, maintenance support.
